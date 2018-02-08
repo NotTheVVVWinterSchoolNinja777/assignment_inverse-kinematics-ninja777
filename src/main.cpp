@@ -48,12 +48,24 @@ class Controller : public RFModule
     {
         Matrix J(2,3);
         J(0,0)=-link_length*(sin(j[0])+sin(j[0]+j[1])+sin(j[0]+j[1]+j[2]));
-        J(0,1)=-link_length*(sin(j[0]+j[1]) +sin(j[0]+j[1]+j[3]));
+        J(0,1)=-link_length*(sin(j[0]+j[1]) +sin(j[0]+j[1]+j[2]));
         J(0,2)= -link_length*(sin(j[0]+j[1]+j[2]));
 
         J(1,0)=link_length*(cos(j[0])+cos(j[0]+j[1])+cos(j[0]+j[1]+j[2]));
         J(1,1)=link_length*(cos(j[0]+j[1])+cos(j[0]+j[1]+j[2]));
         J(0,2)=link_length*(cos(j[0]+j[1]+j[2]));
+
+        return J;
+    }
+
+    Matrix jacobian_ee(const Vector &j) const
+    {
+        Matrix J(2,2);
+        J(0,0)=-link_length*(sin(j[0])+sin(j[0]+j[1])+sin(j[0]+j[1]+j[2]));
+        J(0,1)=-link_length*(sin(j[0]+j[1]) +sin(j[0]+j[1]+j[2])+sin(j[0]+j[1]+j[2]));
+
+        J(1,0)=link_length*(cos(j[0])+cos(j[0]+j[1])+cos(j[0]+j[1]+j[2]));
+        J(1,1)=link_length*(cos(j[0]+j[1])+cos(j[0]+j[1]+j[2])+cos(j[0]+j[1]+j[2]));
 
         return J;
     }
@@ -114,17 +126,18 @@ public:
         Matrix J=jacobian(encoders);
         Vector err=ee_d-ee;
 
-//        Vector ee_full=zeros(3);
-//        ee_full[0]=err[0];
-//        ee_full[1]=err[1];
-//        ee_full[2]=phi_d - encoders[0]+encoders[1]+encoders[2];
+        Vector ee_full=zeros(3);
+        ee_full[0]=err[0];
+        ee_full[1]=err[1];
+        ee_full[2]=phi_d - encoders[2];
 
         double k=10.0;
         Matrix G=2.0*eye(2,2);
         vel=J.transposed()*pinv(J*J.transposed()+k*k*eye(2,2))*G*err;
 
 //        yInfo()<<
-//        vel = pinv(J)*err + (eye(3)-pinv(J)*J)*ee_full;
+//        J=jacobian_ee(encoders);
+//        vel += (eye(3)-pinv(J)*J)*ee_full;
         // deliver the computed velocities to the actuators
         portMotors.writeStrict();
         
