@@ -37,9 +37,9 @@ class Controller : public RFModule
     Vector forward_kinematics(const Vector &j) const
     {
         Vector ee(2);
-        ee[0]=link_length*(cos(j[0])+cos(j[0]+j[1]) +cos(j[0]+j[1]+j[2]));
-        ee[1]=link_length*(sin(j[0])+sin(j[0]+j[1])+sin(j[0]+j[1]+j[2]));
-//        ee[3]=j[0]+j[1]+j[3];
+        ee[0]=link_length*(cos(j[0]) + cos(j[0]+j[1]) + cos(j[0]+j[1]+j[2]));
+        ee[1]=link_length*(sin(j[0]) + sin(j[0]+j[1]) + sin(j[0]+j[1]+j[2]));
+
         return ee;
     }
 
@@ -49,23 +49,11 @@ class Controller : public RFModule
         Matrix J(2,3);
         J(0,0)=-link_length*(sin(j[0])+sin(j[0]+j[1])+sin(j[0]+j[1]+j[2]));
         J(0,1)=-link_length*(sin(j[0]+j[1]) +sin(j[0]+j[1]+j[2]));
-        J(0,2)= -link_length*(sin(j[0]+j[1]+j[2]));
+        J(0,2)=-link_length*(sin(j[0]+j[1]+j[2]));
 
         J(1,0)=link_length*(cos(j[0])+cos(j[0]+j[1])+cos(j[0]+j[1]+j[2]));
         J(1,1)=link_length*(cos(j[0]+j[1])+cos(j[0]+j[1]+j[2]));
-        J(0,2)=link_length*(cos(j[0]+j[1]+j[2]));
-
-        return J;
-    }
-
-    Matrix jacobian_ee(const Vector &j) const
-    {
-        Matrix J(2,2);
-        J(0,0)=-link_length*(sin(j[0])+sin(j[0]+j[1])+sin(j[0]+j[1]+j[2]));
-        J(0,1)=-link_length*(sin(j[0]+j[1]) +sin(j[0]+j[1]+j[2])+sin(j[0]+j[1]+j[2]));
-
-        J(1,0)=link_length*(cos(j[0])+cos(j[0]+j[1])+cos(j[0]+j[1]+j[2]));
-        J(1,1)=link_length*(cos(j[0]+j[1])+cos(j[0]+j[1]+j[2])+cos(j[0]+j[1]+j[2]));
+        J(1,2)=link_length*(cos(j[0]+j[1]+j[2]));
 
         return J;
     }
@@ -117,7 +105,7 @@ public:
         
         // retrieve the current target orientation
         double phi_d=target[2];
-
+        double current_phi = encoders[0]+encoders[1]+encoders[2];
 
         Vector &vel=portMotors.prepare();
         vel=zeros(3);
@@ -126,18 +114,34 @@ public:
         Matrix J=jacobian(encoders);
         Vector err=ee_d-ee;
 
-        Vector ee_full=zeros(3);
-        ee_full[0]=err[0];
-        ee_full[1]=err[1];
-        ee_full[2]=phi_d - encoders[2];
+        Vector q0_dot=zeros(3);
+        q0_dot[0]=phi_d - current_phi;
+        q0_dot[1]=phi_d - current_phi;
+        q0_dot[2]=phi_d - current_phi;
 
-        double k=10.0;
-        Matrix G=2.0*eye(2,2);
-        vel=J.transposed()*pinv(J*J.transposed()+k*k*eye(2,2))*G*err;
+        q0_dot = 2.0*q0_dot;
 
-//        yInfo()<<
-//        J=jacobian_ee(encoders);
-//        vel += (eye(3)-pinv(J)*J)*ee_full;
+        double k = 10.0;
+        Matrix G = 1.0*eye(2,2);
+        yInfo()<<"Calculating J_star";
+        Matrix J_star = J.transposed()*pinv(J*J.transposed()+k*k*eye(2,2));
+
+        yInfo()<<"Calculating velocities for primary goal";
+        vel = J_star*G*err;
+
+        yInfo()<<"Calculating null space converter";
+        yInfo()<<"Matrix Jstar is :"<<J_star.rows()<<" x "<<J_star.cols();
+        yInfo()<<"Matrix J is :"<<J.rows()<<" x "<<J.cols();
+
+        Matrix null_space_operator=(eye(3,3)- J_star*J);
+
+        yInfo()<<"Null Space Operator:";
+        yInfo()<<null_space_operator(0,0)<<" "<<null_space_operator(0,1)<<" "<<null_space_operator(0,2)<<"\n"<<null_space_operator(1,0)<<" "<<null_space_operator(1,1)<<" "<<null_space_operator(1,2)<<"\n"<<null_space_operator(2,0)<<" "<<null_space_operator(2,1)<<" "<<null_space_operator(2,2);
+
+        vel += null_space_operator*q0_dot;
+//        vel = q0_dot + pinv(J)*(err - J*q0_dot);
+
+
         // deliver the computed velocities to the actuators
         portMotors.writeStrict();
         
